@@ -210,45 +210,80 @@ static int newSwapTo = 0;
 
 static void ItemBrowserUi(void* userData) {
 	if (!itemBrowserOpen) return;
-	static std::unordered_map<unsigned __int64, ItemBrowserEntry> itemCache;
+
 	static bool firstOpen = true;
-	if (itemCache.empty()) {
+	static std::unordered_map<unsigned __int64, ItemBrowserEntry> itemCache;
+	static std::vector<const ItemBrowserEntry*> sortedEntries;
+	static std::vector<const ItemBrowserEntry*> filteredEntries;
+	static bool cacheBuilt = false;
+	static char lastSearchBuffer[128] = "";
+
+	// Build the cache and sort entries only once
+	if (!cacheBuilt) {
 		FillItemCache(itemCache);
+
+		// Sort the entries once
+		sortedEntries.clear();
+		for (const auto& kv : itemCache) {
+			sortedEntries.push_back(&kv.second);
+		}
+		std::sort(sortedEntries.begin(), sortedEntries.end(), [](const ItemBrowserEntry* a, const ItemBrowserEntry* b) {
+			if (a->id != b->id) return a->id < b->id;
+			return a->level < b->level;
+			});
+
+		// Initialize filteredEntries with all items for the initial render
+		filteredEntries = sortedEntries;
+
+		cacheBuilt = true;
 	}
+
 	if (firstOpen) {
 		g_imgui->SetNextWindowSize(600.0f, 400.0f, 1);
 		firstOpen = false;
 	}
+
 	g_imgui->Begin("Item Browser (Beta)", &itemBrowserOpen, 32);
+
 	static char searchBuffer[128] = "";
-	//display all entries from itemCache that match the searchBuffer
 	g_imgui->InputText("Search", searchBuffer, sizeof(searchBuffer));
 	g_imgui->Separator();
-	std::vector<const ItemBrowserEntry*> sortedEntries;
-	for (const auto& kv : itemCache) {
-		sortedEntries.push_back(&kv.second);
-	}
-	std::sort(sortedEntries.begin(), sortedEntries.end(), [](const ItemBrowserEntry* a, const ItemBrowserEntry* b) {
-		if (a->id != b->id) return a->id < b->id;
-		return a->level < b->level;
-		});
-	std::string searchStr = searchBuffer;
-	std::transform(searchStr.begin(), searchStr.end(), searchStr.begin(), ::tolower);
 
-	for (const auto* entry : sortedEntries) {
+	// Filter items only when the search buffer changes
+	if (strcmp(searchBuffer, lastSearchBuffer) != 0) {
+		strcpy_s(lastSearchBuffer, searchBuffer);
+
+		std::string searchStr = searchBuffer;
+		std::transform(searchStr.begin(), searchStr.end(), searchStr.begin(), ::tolower);
+
+		filteredEntries.clear();
+		if (searchStr.empty()) {
+			// If the search buffer is empty, display all items
+			filteredEntries = sortedEntries;
+		}
+		else {
+			// Otherwise, filter the items
+			for (const auto* entry : sortedEntries) {
+				std::string nameStr = WStringToString(entry->name);
+				std::string nameStrLower = nameStr;
+				std::transform(nameStrLower.begin(), nameStrLower.end(), nameStrLower.begin(), ::tolower);
+
+				// Convert item ID to string for comparison
+				std::string idStr = std::to_string(entry->id);
+
+				// Check if the search term matches the name or the ID
+				if (WordsInOrderMatch(nameStrLower, searchStr) || idStr.find(searchStr) != std::string::npos) {
+					filteredEntries.push_back(entry);
+				}
+			}
+		}
+	}
+
+	// Iterate only through the filtered entries
+	for (const auto* entry : filteredEntries) {
 		g_imgui->PushIdInt(entry->id * 1000 + entry->level);
 		std::string nameStr = WStringToString(entry->name);
-		std::string nameStrLower = nameStr;
-		std::transform(nameStrLower.begin(), nameStrLower.end(), nameStrLower.begin(), ::tolower);
 
-		bool show = true;
-		if (!searchStr.empty()) {
-			show = WordsInOrderMatch(nameStrLower, searchStr);
-		}
-		if (!show) {
-			g_imgui->PopId();
-			continue;
-		}
 		g_imgui->Text("ID: %d, Level: %d, Name: %s", entry->id, entry->level, nameStr.c_str());
 		g_imgui->SameLine(0, 5.0f);
 		if (g_imgui->SmallButton("Copy ID")) {
@@ -264,6 +299,7 @@ static void ItemBrowserUi(void* userData) {
 		}
 		g_imgui->PopId();
 	}
+
 	g_imgui->End();
 }
 
@@ -285,16 +321,48 @@ static void ItemSwapConfigUi(void* userData) {
 		itemBrowserOpen = true;
 	}
 	g_imgui->Separator();
+
 	if (g_imgui->CollapsingHeader("Item Swaps")) {
+		// Add headers for the list
+		g_imgui->Text("Name");
+		g_imgui->SameLine(150.0f, 10.0f);
+		g_imgui->Text("From ID");
+		g_imgui->SameLine(250.0f, 10.0f);
+		g_imgui->Text("To ID");
+		g_imgui->SameLine(350.0f, 10.0f);
+		g_imgui->Text("Enabled");
+		g_imgui->SameLine(450.0f, 10.0f);
+		g_imgui->Text("Actions");
+		g_imgui->Separator();
+
+		// Display each swap
 		for (auto& swap : g_PluginConfig->ItemSwapConfig.Swaps) {
 			g_imgui->PushIdInt(&swap - &g_PluginConfig->ItemSwapConfig.Swaps[0]);
-			g_imgui->Checkbox(WStringToString(swap.Name).c_str(), &swap.Enabled);
-			g_imgui->SameLine(0, 5.0f);
-			g_imgui->Text("From ID: %d", swap.From);
-			g_imgui->SameLine(0, 5.0f);
-			g_imgui->Text("To ID: %d", swap.To);
-			g_imgui->SameLine(0, 5.0f);
-			//edit. fill the newswap fields
+
+			// Truncate name to fit the column
+			std::string nameStr = WStringToString(swap.Name);
+			const size_t maxNameLength = 20; // Maximum length for the name
+			if (nameStr.length() > maxNameLength) {
+				nameStr = nameStr.substr(0, maxNameLength - 3) + "...";
+			}
+
+			// Name
+			g_imgui->Text("%s", nameStr.c_str());
+			g_imgui->SameLine(150.0f, 10.0f);
+
+			// From ID
+			g_imgui->Text("%d", swap.From);
+			g_imgui->SameLine(250.0f, 10.0f);
+
+			// To ID
+			g_imgui->Text("%d", swap.To);
+			g_imgui->SameLine(350.0f, 10.0f);
+
+			// Enabled checkbox
+			g_imgui->Checkbox("", &swap.Enabled);
+			g_imgui->SameLine(450.0f, 10.0f);
+
+			// Actions
 			if (g_imgui->SmallButton("Edit")) {
 				strncpy_s(newSwapName, WStringToString(swap.Name).c_str(), sizeof(newSwapName) - 1);
 				newSwapFrom = swap.From;
@@ -303,25 +371,24 @@ static void ItemSwapConfigUi(void* userData) {
 					std::remove(g_PluginConfig->ItemSwapConfig.Swaps.begin(), g_PluginConfig->ItemSwapConfig.Swaps.end(), swap),
 					g_PluginConfig->ItemSwapConfig.Swaps.end()
 				);
-				g_imgui->PopId();
 			}
-			g_imgui->SameLine(0, 5.0f);
+			g_imgui->SameLine(0.0f, 10.0f);
 			if (g_imgui->SmallButton("Remove")) {
-				//remove this swap
 				g_PluginConfig->ItemSwapConfig.Swaps.erase(
 					std::remove(g_PluginConfig->ItemSwapConfig.Swaps.begin(), g_PluginConfig->ItemSwapConfig.Swaps.end(), swap),
 					g_PluginConfig->ItemSwapConfig.Swaps.end()
 				);
-				g_imgui->PopId();
-				break; //break out of the loop since the vector has changed
+				break; // Break out of the loop since the vector has changed
 			}
+			g_imgui->Separator();
 			g_imgui->PopId();
 		}
 	}
+
 	g_imgui->Spacing();
-	g_imgui->Separator();
 	g_imgui->Spacing();
-	//add a new swap 
+
+	// Add a new swap
 	g_imgui->InputText("New Swap Name", newSwapName, sizeof(newSwapName));
 	g_imgui->InputInt("From ID", &newSwapFrom);
 	g_imgui->InputInt("To ID", &newSwapTo);
@@ -333,12 +400,13 @@ static void ItemSwapConfigUi(void* userData) {
 			swap.To = newSwapTo;
 			swap.Enabled = true;
 			g_PluginConfig->ItemSwapConfig.Swaps.push_back(swap);
-			//clear input
+			// Clear input
 			newSwapName[0] = '\0';
 			newSwapFrom = 0;
 			newSwapTo = 0;
 		}
 	}
+
 	g_imgui->Spacing();
 	g_imgui->Separator();
 	g_imgui->Spacing();
@@ -350,7 +418,6 @@ static void ItemSwapConfigUi(void* userData) {
 	}
 	ItemBrowserUi(nullptr);
 }
-
 static void SetupEE() {
 	if (g_dataManager == nullptr || g_oFind == nullptr) return;
 #ifdef _BNSEU
