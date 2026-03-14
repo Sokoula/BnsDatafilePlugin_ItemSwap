@@ -1,19 +1,18 @@
 ﻿#include "DatafilePluginsdk.h"
-#include <EU/item/AAA_item_RecordBase.h>
-#include <EU/item/item_costume_Record.h>
-#include <EU/text/AAA_text_RecordBase.h>
-#include <EU/icontexture/AAA_icontexture_RecordBase.h>
+#include <Dynamic/item/AAA_item_RecordBase.h>
+#include <Dynamic/item/item_costume_Record.h>
+#include <Dynamic/text/AAA_text_RecordBase.h>
+#include <Dynamic/icontexture/AAA_icontexture_RecordBase.h>
 #include <EU/BnsTableNames.h>
-#include <KR/item/AAA_item_RecordBase.h>
-#include <KR/item/item_costume_Record.h>
-#include <KR/text/AAA_text_RecordBase.h>
-#include <KR/icontexture/AAA_icontexture_RecordBase.h>
 #include <KR/BnsTableNames.h>
 #include "plugin_version.h"
 #include "PluginConfig.hpp"
 
 #include <windows.h>
 #include <xorstr.hpp>
+#include <sstream>
+
+using namespace BnsTables::Dynamic;
 
 /**
  * @file Plugin.cpp
@@ -43,11 +42,21 @@ static constexpr const wchar_t* eeFemaleMesh = L"/Game/neo_art/art/character/clo
 static constexpr const wchar_t* eeFemaleCol1 = L"/Game/neo_art/art/character/cloth/65071-금각은각조종자/jinf/col1/col1.col1";
 static constexpr const wchar_t* eeFemaleCol2 = L"";
 static unsigned long long eeIconTextureId = 0;
-#ifdef _BNSEU
-static BnsTables::EU::item_costume_Record* eeCopy = nullptr;
-#elif _BNSKR
-static BnsTables::KR::item_costume_Record* eeCopy = nullptr;
-#endif
+
+//lancer special
+static constexpr const wchar_t* ee2FemaleMesh = L"/Game/Neo_Art/Art/Character/Cloth/19169-25Neo참격사직업의상/JinF/Mesh/19169_JinF.19169_JinF";
+static constexpr const wchar_t* ee2FemaleCol1 = L"/Game/Art/Resource/Character/Skin/JinF_NewSkin.JinF_NewSkin";
+static constexpr const wchar_t* ee2FemaleCol2 = L"/Game/Neo_Art/Art/Character/Cloth/19169-25Neo참격사직업의상/JinF/Col1/Col1.Col1";
+static constexpr const wchar_t* ee2MaleMesh = L"/Game/Neo_Art/Art/Character/Cloth/19169-25Neo참격사직업의상/JinM/Mesh/19169_JinM.19169_JinM";
+static constexpr const wchar_t* ee2MaleCol1 = L"/Game/Art/Resource/Character/Skin/JinM_NewSkin.JinM_NewSkin";
+static constexpr const wchar_t* ee2MaleCol2 = L"/Game/Neo_Art/Art/Character/Cloth/19169-25Neo참격사직업의상/JinM/Col1/Col1.Col1";
+static unsigned long long ee2IconTextureId = 0;
+
+static int eeCopyOrigId = 0;
+static int ee2CopyOrigId = 0;
+static item_costume_Record* eeCopy = nullptr;
+static item_costume_Record* ee2Copy = nullptr;
+
 
 static PluginReturnData __fastcall ItemDetour(PluginExecuteParams* params) {
 #ifdef _BNSEU
@@ -56,13 +65,10 @@ static PluginReturnData __fastcall ItemDetour(PluginExecuteParams* params) {
 	PLUGIN_DETOUR_GUARD(params, BnsTables::KR::TableNames::GetTableVersion);
 #endif
 	if (!g_PluginConfig->ItemSwapConfig.GlobalEnabled) return {};
-#ifdef _BNSKR
-	BnsTables::KR::item_Record::Key currentKey{};
+	item_Record::Key origKey{};
+	origKey.key = params->key;
+	item_Record::Key currentKey{};
 	currentKey.key = params->key;
-#elif _BNSEU
-	BnsTables::EU::item_Record::Key currentKey{};
-	currentKey.key = params->key;
-#endif // _BNSKR
 	const auto swapMap = g_PluginConfig->ItemSwapConfig.GetEnabledSwapMap();
 	if (swapMap.empty()) return {};
 	auto it = swapMap.find(currentKey.id);
@@ -70,26 +76,37 @@ static PluginReturnData __fastcall ItemDetour(PluginExecuteParams* params) {
 		currentKey.id = it->second;
 		currentKey.level = 1;
 		if (currentKey.id == 69696969) { //do you like zulia?
-			if (eeCopy == nullptr) {
-#ifdef _BNSEU
-				auto record = (BnsTables::EU::item_costume_Record*)params->oFind(params->table, params->key);
-#elif _BNSKR
-				auto record = (BnsTables::KR::item_costume_Record*)params->oFind(params->table, params->key);
-#endif
+			if (eeCopy == nullptr || eeCopyOrigId != origKey.id) {
+				auto record = (item_costume_Record*)params->oFind(params->table, params->key);
 				if (record != nullptr) {
-#ifdef _BNSEU
-					eeCopy = new BnsTables::EU::item_costume_Record(*record);
-#elif _BNSKR
-					eeCopy = new BnsTables::KR::item_costume_Record(*record);
-#endif
+					eeCopy = new item_costume_Record(*record);
 					eeCopy->jin_female_mesh = const_cast<wchar_t*>(eeFemaleMesh);
 					eeCopy->jin_female_mesh_col[0] = const_cast<wchar_t*>(eeFemaleCol1);
 					eeCopy->jin_female_mesh_col[1] = const_cast<wchar_t*>(eeFemaleCol2);
 					eeCopy->item_grade = 9;
 					eeCopy->icon.IcontextureId = eeIconTextureId;
+					eeCopyOrigId = origKey.id;
 				}
 			}
 			return { (DrEl*)eeCopy };
+		}
+		if (currentKey.id == 69696970) { //do you like lancer?
+			if (ee2Copy == nullptr || ee2CopyOrigId != origKey.id) {
+				auto record = (item_costume_Record*)params->oFind(params->table, params->key);
+				if (record != nullptr) {
+					ee2Copy = new item_costume_Record(*record);
+					ee2Copy->jin_female_mesh = const_cast<wchar_t*>(ee2FemaleMesh);
+					ee2Copy->jin_female_mesh_col[0] = const_cast<wchar_t*>(ee2FemaleCol1);
+					ee2Copy->jin_female_mesh_col[1] = const_cast<wchar_t*>(ee2FemaleCol2);
+					ee2Copy->jin_male_mesh = const_cast<wchar_t*>(ee2MaleMesh);
+					ee2Copy->jin_male_mesh_col[0] = const_cast<wchar_t*>(ee2MaleCol1);
+					ee2Copy->jin_male_mesh_col[1] = const_cast<wchar_t*>(ee2MaleCol2);
+					ee2Copy->item_grade = 9;
+					ee2Copy->icon.IcontextureId = ee2IconTextureId;
+					ee2CopyOrigId = origKey.id;
+				}
+			}
+			return { (DrEl*)ee2Copy };
 		}
 		auto recordBase = params->oFind(params->table, currentKey.key);
 		if (recordBase != nullptr) {
@@ -126,21 +143,13 @@ struct ItemBrowserEntry {
 static void FillItemCache(std::unordered_map<unsigned __int64, ItemBrowserEntry>& itemCache) {
 	if (g_dataManager == nullptr || g_PluginConfig == nullptr) return;
 	auto itemTable = GetTable(g_dataManager, L"item");
-#ifdef _BNSEU
-	ForEachRecord<BnsTables::EU::item_Record>(itemTable, [&](BnsTables::EU::item_Record* record, size_t) {
-#elif _BNSKR
-	ForEachRecord<BnsTables::KR::item_Record>(itemTable, [&](BnsTables::KR::item_Record* record, size_t) {
-#endif
+	ForEachRecord<item_Record>(itemTable, [&](item_Record* record, size_t) {
 		if (record == nullptr) return true;
 		ItemBrowserEntry entry;
 		entry.id = record->key.id;
 		entry.level = record->key.level;
 		if (record->name2.Key != 0) {
-#ifdef _BNSEU
-			auto itemName = GetText<BnsTables::EU::text_Record>(g_dataManager, record->name2.Key, g_oFind);
-#elif _BNSKR
-			auto itemName = GetText<BnsTables::KR::text_Record>(g_dataManager, record->name2.Key, g_oFind);
-#endif
+			auto itemName = GetText<text_Record>(g_dataManager, record->name2.Key, g_oFind);
 			if (itemName && itemName->text.ReadableText) {
 				entry.name = itemName->text.ReadableText;
 			}
@@ -154,7 +163,7 @@ static void FillItemCache(std::unordered_map<unsigned __int64, ItemBrowserEntry>
 }
 
 // Copies a UTF-8 std::string to the Windows clipboard
-inline static void CopyStringToClipboard(const std::string & str) {
+inline static void CopyStringToClipboard(const std::string& str) {
 	if (str.empty()) return;
 
 	// Convert UTF-8 std::string to UTF-16 wstring
@@ -188,10 +197,8 @@ inline static void CopyStringToClipboard(const std::string & str) {
 	CloseClipboard();
 }
 
-#include <sstream>
-
 // Returns true if all words in 'needle' appear in order in 'haystack'
-static bool WordsInOrderMatch(const std::string & haystack, const std::string & needle) {
+static bool WordsInOrderMatch(const std::string& haystack, const std::string& needle) {
 	std::istringstream needleStream(needle);
 	std::string needleWord;
 	size_t pos = 0;
@@ -420,15 +427,22 @@ static void ItemSwapConfigUi(void* userData) {
 }
 static void SetupEE() {
 	if (g_dataManager == nullptr || g_oFind == nullptr) return;
-#ifdef _BNSEU
-	ForEachRecord<BnsTables::EU::icontexture_Record>(g_dataManager, L"icontexture", [&](BnsTables::EU::icontexture_Record* record, size_t) {
-#elif _BNSKR
-	ForEachRecord<BnsTables::KR::icontexture_Record>(g_dataManager, L"icontexture", [&](BnsTables::KR::icontexture_Record* record, size_t) {
-#endif
+
+	bool foundEE1 = false;
+	bool foundEE2 = false;
+
+	ForEachRecord<icontexture_Record>(g_dataManager, L"icontexture", [&](icontexture_Record* record, size_t) {
 		if (record == nullptr) return true;
+		if (foundEE1 && foundEE2) return false; //stop iteration if both found
 		if (record->alias && wcscmp(record->alias, L"Costume_65071_JinF_col1") == 0) {
 			eeIconTextureId = record->key.key;
-			return false; //stop iteration
+			foundEE1 = true;
+			return true;
+		}
+		if (record->alias && wcscmp(record->alias, L"Costume_19169_JinM_col1") == 0) {
+			ee2IconTextureId = record->key.key;
+			foundEE2 = true;
+			return true;
 		}
 		return true; // continue iteration
 		});
@@ -441,7 +455,7 @@ static void SetupEE() {
  *
  * @param params Initialization parameters provided by the host.
  */
-static void __fastcall Init(PluginInitParams * params) {
+static void __fastcall Init(PluginInitParams* params) {
 	if (params && params->registerImGuiPanel && params->unregisterImGuiPanel && params->imgui)
 	{
 		g_imgui = params->imgui;

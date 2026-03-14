@@ -10,6 +10,10 @@ A plugin for BNS NEO that allows you to intercept and modify item data lookups u
 ## Example outfit swap
 <img src="example.png" alt="Example Image" width="600">
 
+## Special Ids
+- `69696969` - Zulia Outfit  (JinF only)
+- `69696970` - Lancer Outfit (Jin only)
+
 
 ## Demo
 [![Watch the demo](https://img.youtube.com/vi/FNsMJbJlf4A/hqdefault.jpg)](https://www.youtube.com/watch?v=FNsMJbJlf4A)
